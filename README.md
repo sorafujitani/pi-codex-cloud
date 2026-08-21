@@ -44,10 +44,10 @@ The optional `PI_CXCLOUD_ATTEMPTS` variable sets the default best-of-N attempt c
 
 ### Codex Cloud environment for this repository
 
-When using Codex Cloud to develop `pi-codex-cloud` itself, configure the environment with Node.js 26.7.0. Codex Cloud recognizes pnpm projects automatically; if you use a custom setup script, install dependencies with:
+When using Codex Cloud to develop `pi-codex-cloud` itself, configure the environment with Node.js 26.7.0. Codex Cloud recognizes pnpm projects automatically. If Vite+ is available in a custom setup script, install dependencies through Vite+ with:
 
 ```bash
-pnpm install --frozen-lockfile
+vp install --frozen-lockfile
 ```
 
 Node.js 26.7.0 is the current release, not an LTS release. The project intentionally follows the latest stable Node.js release.
@@ -96,12 +96,12 @@ Commands are executed with an argument array through Pi's extension API. User in
 Development uses Node.js 26.7.0 and pnpm 11.22.0.
 
 ```bash
-pnpm install --frozen-lockfile
-pnpm check
-pnpm test
+vp install --frozen-lockfile
+vp check
+vp test --run
 ```
 
-The project pins the current Node.js and pnpm releases in `package.json` and `.node-version`. `pnpm check` runs Vite+ formatting, Oxlint, and type checking; `pnpm test` runs Vitest.
+The project pins the current Node.js and pnpm releases in `package.json` and `.node-version`, while Vite+ is the developer-facing command entry point. `vp check` runs formatting, Oxlint, and type checking; `vp test --run` runs Vitest.
 
 ## License
 
