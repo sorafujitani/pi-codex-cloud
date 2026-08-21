@@ -38,8 +38,20 @@ export interface InspectOptions {
   signal?: AbortSignal;
 }
 
+export interface CloudEnvironment {
+  id: string;
+  label?: string;
+}
+
+export interface EnvironmentDiscovery {
+  environments: CloudEnvironment[];
+  labelsWithoutId: string[];
+}
+
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DELEGATE_TIMEOUT_MS = 60_000;
+const APPLY_TIMEOUT_MS = 120_000;
+export const ENVIRONMENT_SETTINGS_URL = "https://chatgpt.com/codex/settings/environments";
 
 export class CommandError extends Error {
   constructor(
@@ -64,6 +76,9 @@ async function checkedExec(
   options: ExecOptions,
 ): Promise<ExecResult> {
   const result = await exec(command, args, options);
+  if (result.killed) {
+    throw new CommandError(`${command} timed out or was aborted`, command, args, result);
+  }
   if (result.code !== 0) {
     const detail = outputOf(result);
     throw new CommandError(
@@ -81,6 +96,97 @@ function requireValue(value: string, label: string): string {
   if (!trimmed) throw new Error(`${label} is required.`);
   if (trimmed.startsWith("-")) throw new Error(`${label} must not start with '-'.`);
   return trimmed;
+}
+
+export function resolveCodexBinary(value: string | undefined): string {
+  if (value === undefined || value.trim() === "") return "codex";
+  return requireValue(value, "Codex binary");
+}
+
+export function parseEnvironmentId(value: string): string {
+  const environmentId = requireValue(value, "Environment ID");
+  if (environmentId.toLowerCase() === "null") {
+    throw new Error(
+      "'null' is not a usable Environment ID. Create a saved Codex Cloud environment or use /cxcloud:env auto.",
+    );
+  }
+  return environmentId;
+}
+
+export function wrapMarkdownFence(body: string, language = "text"): string {
+  const content = body || "(no output)";
+  const runs = content.match(/`+/g);
+  const longest = runs ? Math.max(...runs.map((run) => run.length)) : 0;
+  const fence = "`".repeat(Math.max(3, longest + 1));
+  return `${fence}${language}\n${content}\n${fence}`;
+}
+
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+export function parseEnvironmentDiscovery(output: string): EnvironmentDiscovery {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(output);
+  } catch {
+    throw new Error("Could not parse Codex Cloud task list as JSON.");
+  }
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("tasks" in payload) ||
+    !Array.isArray(payload.tasks)
+  ) {
+    throw new Error("Codex Cloud task list does not contain a tasks array.");
+  }
+
+  const environments = new Map<string, CloudEnvironment>();
+  const labelsWithoutId = new Set<string>();
+  for (const task of payload.tasks) {
+    if (typeof task !== "object" || task === null) continue;
+    const id = "environment_id" in task ? nonEmptyString(task.environment_id) : undefined;
+    const label = "environment_label" in task ? nonEmptyString(task.environment_label) : undefined;
+    if (id) {
+      const existing = environments.get(id);
+      if (!existing) environments.set(id, label ? { id, label } : { id });
+      else if (!existing.label && label) environments.set(id, { id, label });
+    } else if (label) {
+      labelsWithoutId.add(label);
+    }
+  }
+
+  for (const environment of environments.values()) {
+    if (environment.label) labelsWithoutId.delete(environment.label);
+  }
+  return {
+    environments: [...environments.values()],
+    labelsWithoutId: [...labelsWithoutId],
+  };
+}
+
+export function summarizeEnvironmentDiscovery(discovery: EnvironmentDiscovery): string {
+  const lines: string[] = [];
+  if (discovery.environments.length > 0) {
+    lines.push("Reusable environments from recent tasks:");
+    for (const environment of discovery.environments) {
+      lines.push(`- ${environment.label ? `${environment.label}: ` : ""}${environment.id}`);
+    }
+  } else {
+    lines.push("No reusable Environment ID was found in recent Codex Cloud tasks.");
+  }
+  if (discovery.labelsWithoutId.length > 0) {
+    lines.push("Recent task labels without a reusable ID:");
+    for (const label of discovery.labelsWithoutId) {
+      lines.push(`- ${label} (environment_id is null)`);
+    }
+  }
+  if (discovery.environments.length === 0) {
+    lines.push(
+      `Create a saved environment at ${ENVIRONMENT_SETTINGS_URL}, run one task from it, then retry /cxcloud:env.`,
+    );
+  }
+  return lines.join("\n");
 }
 
 export function parseAttempts(value: string | number | undefined): number {
@@ -132,17 +238,40 @@ export async function inspectGitState(
     timeout: DEFAULT_TIMEOUT_MS,
   });
 
-  const upstreamResult = await exec(
-    "git",
-    ["rev-parse", "--abbrev-ref", "--symbolic-full-name", `${branch}@{upstream}`],
-    { cwd, signal, timeout: DEFAULT_TIMEOUT_MS },
-  );
-  if (upstreamResult.code !== 0 || !upstreamResult.stdout.trim()) {
+  const upstreamArgs = [
+    "rev-parse",
+    "--abbrev-ref",
+    "--symbolic-full-name",
+    `${branch}@{upstream}`,
+  ];
+  const upstreamResult = await exec("git", upstreamArgs, {
+    cwd,
+    signal,
+    timeout: DEFAULT_TIMEOUT_MS,
+  });
+  if (upstreamResult.killed) {
     throw new Error(
-      `Branch '${branch}' has no upstream. Push it before delegating so Codex Cloud can check it out.`,
+      `Could not resolve upstream for branch '${branch}': git timed out or was aborted.`,
+    );
+  }
+  if (upstreamResult.code !== 0) {
+    const detail = outputOf(upstreamResult);
+    if (/no upstream configured/i.test(`${upstreamResult.stderr}\n${upstreamResult.stdout}`)) {
+      throw new Error(
+        `Branch '${branch}' has no upstream. Push it before delegating so Codex Cloud can check it out.`,
+      );
+    }
+    throw new CommandError(
+      detail ? `git failed: ${detail}` : `git exited with code ${upstreamResult.code}`,
+      "git",
+      upstreamArgs,
+      upstreamResult,
     );
   }
   const upstream = upstreamResult.stdout.trim();
+  if (!upstream) {
+    throw new Error(`Could not resolve upstream for branch '${branch}'.`);
+  }
 
   const divergence = outputOf(
     await checkedExec(
@@ -210,16 +339,23 @@ export class CodexCloudClient {
         timeout: DEFAULT_TIMEOUT_MS,
       }),
     );
+    const login = outputOf(
+      await checkedExec(this.exec, this.codexBinary, ["login", "status"], {
+        cwd,
+        signal,
+        timeout: DEFAULT_TIMEOUT_MS,
+      }),
+    );
     await checkedExec(this.exec, this.codexBinary, ["cloud", "--help"], {
       cwd,
       signal,
       timeout: DEFAULT_TIMEOUT_MS,
     });
-    return version;
+    return [version, login].filter(Boolean).join("; ");
   }
 
   async delegate(options: DelegateOptions): Promise<{ output: string; git: GitState }> {
-    const environmentId = requireValue(options.environmentId, "Environment ID");
+    const environmentId = parseEnvironmentId(options.environmentId);
     const prompt = requireValue(options.prompt, "Task prompt");
     const attempts = parseAttempts(options.attempts);
     const git = await inspectGitState(this.exec, options.cwd, options.branch, options.signal);
@@ -250,7 +386,7 @@ export class CodexCloudClient {
 
   async list(cwd: string, environmentId?: string, signal?: AbortSignal): Promise<string> {
     const args = ["cloud", "list", "--json"];
-    if (environmentId?.trim()) args.push("--env", requireValue(environmentId, "Environment ID"));
+    if (environmentId?.trim()) args.push("--env", parseEnvironmentId(environmentId));
     return outputOf(
       await checkedExec(this.exec, this.codexBinary, args, {
         cwd,
@@ -258,6 +394,10 @@ export class CodexCloudClient {
         timeout: DEFAULT_TIMEOUT_MS,
       }),
     );
+  }
+
+  async discoverEnvironments(cwd: string, signal?: AbortSignal): Promise<EnvironmentDiscovery> {
+    return parseEnvironmentDiscovery(await this.list(cwd, undefined, signal));
   }
 
   async status(cwd: string, taskId: string, signal?: AbortSignal): Promise<string> {
@@ -288,13 +428,25 @@ export class CodexCloudClient {
     const args = ["cloud", "apply", requireValue(options.taskId, "Task ID")];
     if (options.attempt !== undefined)
       args.push("--attempt", String(parseAttempts(options.attempt)));
-    return outputOf(
-      await checkedExec(this.exec, this.codexBinary, args, {
-        cwd: options.cwd,
-        signal: options.signal,
-        timeout: DEFAULT_TIMEOUT_MS,
-      }),
-    );
+    try {
+      return outputOf(
+        await checkedExec(this.exec, this.codexBinary, args, {
+          cwd: options.cwd,
+          signal: options.signal,
+          timeout: APPLY_TIMEOUT_MS,
+        }),
+      );
+    } catch (error) {
+      if (error instanceof CommandError && error.result.killed) {
+        throw new CommandError(
+          `${error.command} timed out or was aborted while applying. The working tree may be left in a partial state.`,
+          error.command,
+          error.args,
+          error.result,
+        );
+      }
+      throw error;
+    }
   }
 }
 

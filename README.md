@@ -11,7 +11,7 @@ The extension is a thin, auditable wrapper around the official `codex cloud` CLI
 - A Codex Cloud environment connected to the repository
 - A Git branch with an up-to-date upstream
 
-Set up the repository and environment in Codex Cloud before using this extension. The same Codex CLI authentication is used.
+Set up the repository and a saved environment in Codex Cloud before delegating. The same Codex CLI authentication is used. Installing the extension does not require an environment.
 
 ## Install
 
@@ -25,7 +25,21 @@ For local development:
 pi install /absolute/path/to/pi-codex-cloud
 ```
 
-## Configure
+## First-time setup
+
+Create a saved environment for the repository in [Codex Cloud environment settings](https://chatgpt.com/codex/settings/environments). Run at least one task from that environment so the experimental Codex CLI includes its ID in the recent task list.
+
+Start Pi in the target repository and let the extension discover reusable environment IDs from recent tasks:
+
+```text
+/cxcloud:env auto
+```
+
+If one ID is available, it is selected automatically. If several are available, Pi opens a selector. A recent task can have an `environment_label` but a null `environment_id`; labels are display-only and are never passed to `codex cloud exec`. In that case, the command points back to the environment settings page.
+
+`/cxcloud:delegate` performs the same discovery when no default is configured.
+
+## Manual configuration
 
 Set the default Codex Cloud environment ID before starting Pi:
 
@@ -40,7 +54,11 @@ You can also set it for the current Pi session:
 /cxcloud:env your-environment-id
 ```
 
-The optional `PI_CXCLOUD_ATTEMPTS` variable sets the default best-of-N attempt count from 1 to 4. The default is 1.
+Run `/cxcloud:env` with no argument to show the current session value. When no value is set, it performs automatic discovery.
+
+The optional `PI_CXCLOUD_ATTEMPTS` variable sets the default best-of-N attempt count from 1 to 4. Unset or an empty string uses 1.
+
+The optional `PI_CXCLOUD_CODEX_BIN` variable selects the Codex CLI binary. Unset or empty uses `codex`. A non-empty value must not start with `-`.
 
 ### Codex Cloud environment for this repository
 
@@ -56,7 +74,7 @@ Node.js 26.7.0 is the current release, not an LTS release. The project intention
 
 ```text
 /cxcloud:setup
-/cxcloud:env [environment-id]
+/cxcloud:env [auto|environment-id]
 /cxcloud:delegate <task prompt>
 /cxcloud:list
 /cxcloud:status <task-id>
@@ -64,11 +82,11 @@ Node.js 26.7.0 is the current release, not an LTS release. The project intention
 /cxcloud:apply <task-id> [attempt]
 ```
 
-`/cxcloud:apply` always asks for confirmation before changing the local working tree.
+`/cxcloud:setup` checks the Codex CLI version, ChatGPT login status, Cloud command availability, and environment configuration. `/cxcloud:apply` always asks for confirmation before changing the local working tree.
 
 ## Agent tool
 
-The extension registers a `cxcloud` tool so Pi can delegate a task and inspect `list`, `status`, or `diff` results itself. Applying a diff is intentionally only available as the user-invoked `/cxcloud:apply` command.
+The extension registers a `cxcloud` tool so Pi can discover environments, delegate a task, and inspect `list`, `status`, or `diff` results itself. Applying a diff is intentionally only available as the user-invoked `/cxcloud:apply` command.
 
 The package also includes a `cxcloud` Agent Skill. Pi loads it on demand when a request is suitable for Codex Cloud delegation, or you can invoke it explicitly with `/skill:cxcloud`.
 

@@ -12,7 +12,8 @@ Before delegation:
 - Confirm that the user wants the work delegated to Codex Cloud.
 - Ensure the task can be completed from the pushed upstream branch. Uncommitted files are not uploaded.
 - Write a self-contained prompt with the goal, scope, constraints, and verification criteria.
-- Pass an environment ID when the session has no configured default.
+- When no environment is configured, use the `environments` action to discover reusable IDs from recent tasks. Never substitute an `environment_label` or null value for an ID.
+- If discovery returns no ID, direct the user to create a saved environment at `https://chatgpt.com/codex/settings/environments` and run one task from it. Do not attempt delegation without an ID.
 
 Use `list`, `status`, and `diff` to follow the task. Keep these states distinct: submitted, running, completed, diff reviewed, and diff applied locally.
 

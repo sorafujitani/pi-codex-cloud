@@ -4,12 +4,17 @@ import {
   CodexCloudClient,
   errorMessage,
   parseAttempts,
+  parseEnvironmentId,
   parseTaskAndAttempt,
+  resolveCodexBinary,
+  summarizeEnvironmentDiscovery,
+  wrapMarkdownFence,
 } from "../src/codex-cloud.js";
 
 const CODEX_CLOUD_PARAMETERS = Type.Object({
   action: Type.Union([
     Type.Literal("delegate"),
+    Type.Literal("environments"),
     Type.Literal("list"),
     Type.Literal("status"),
     Type.Literal("diff"),
@@ -30,7 +35,7 @@ const CODEX_CLOUD_PARAMETERS = Type.Object({
 function sendResult(pi: ExtensionAPI, title: string, output: string): void {
   pi.sendMessage({
     customType: "pi-cxcloud",
-    content: `**${title}**\n\n\`\`\`text\n${output || "(no output)"}\n\`\`\``,
+    content: `**${title}**\n\n${wrapMarkdownFence(output)}`,
     display: true,
     details: { title },
   });
@@ -47,10 +52,33 @@ async function runCommand(
   }
 }
 
+async function discoverEnvironment(
+  client: CodexCloudClient,
+  ctx: ExtensionCommandContext,
+): Promise<string | undefined> {
+  const discovery = await client.discoverEnvironments(ctx.cwd);
+  if (discovery.environments.length === 0) {
+    throw new Error(summarizeEnvironmentDiscovery(discovery));
+  }
+  if (discovery.environments.length === 1) return discovery.environments[0]?.id;
+  if (!ctx.hasUI) {
+    throw new Error(
+      `${summarizeEnvironmentDiscovery(discovery)}\nSet PI_CXCLOUD_ENV_ID for non-interactive mode.`,
+    );
+  }
+
+  const options = discovery.environments.map((environment) =>
+    environment.label ? `${environment.label} — ${environment.id}` : environment.id,
+  );
+  const selected = await ctx.ui.select("Choose a Codex Cloud environment", options);
+  if (!selected) return undefined;
+  return discovery.environments[options.indexOf(selected)]?.id;
+}
+
 export default function piCodexCloud(pi: ExtensionAPI): void {
   const client = new CodexCloudClient(
     (command, args, options) => pi.exec(command, args, options),
-    process.env.PI_CXCLOUD_CODEX_BIN?.trim() || "codex",
+    resolveCodexBinary(process.env.PI_CXCLOUD_CODEX_BIN),
   );
   let environmentId = process.env.PI_CXCLOUD_ENV_ID?.trim() || undefined;
 
@@ -75,16 +103,25 @@ export default function piCodexCloud(pi: ExtensionAPI): void {
         });
         const targetEnvironment = params.environment_id?.trim() || environmentId;
 
+        if (params.action === "environments") {
+          const discovery = await client.discoverEnvironments(ctx.cwd, signal);
+          return {
+            content: [{ type: "text", text: summarizeEnvironmentDiscovery(discovery) }],
+            details: { action: params.action, ...discovery },
+          };
+        }
+
         if (params.action === "delegate") {
           if (!targetEnvironment) {
             throw new Error(
               "Environment ID is required. Set PI_CXCLOUD_ENV_ID or pass environment_id.",
             );
           }
+          if (!params.prompt?.trim()) throw new Error("Task prompt is required.");
           const result = await client.delegate({
             cwd: ctx.cwd,
             environmentId: targetEnvironment,
-            prompt: params.prompt ?? "",
+            prompt: params.prompt,
             ...(params.branch ? { branch: params.branch } : {}),
             attempts: params.attempts ?? attempts(),
             allowDirty: params.allow_dirty ?? false,
@@ -141,31 +178,34 @@ export default function piCodexCloud(pi: ExtensionAPI): void {
     handler: async (_args, ctx) => {
       await runCommand(ctx, async () => {
         const version = await client.check(ctx.cwd);
-        ctx.ui.notify(
-          `${version}; environment: ${environmentId ?? "not set (use /cxcloud:env <id>)"}`,
-          "info",
-        );
+        const environment = environmentId
+          ? `Environment: ${environmentId}`
+          : summarizeEnvironmentDiscovery(await client.discoverEnvironments(ctx.cwd));
+        sendResult(pi, "Codex Cloud setup", `${version}\n${environment}`);
       });
     },
   });
 
   pi.registerCommand("cxcloud:env", {
-    description: "Show or set the Codex Cloud environment ID for this Pi session",
+    description: "Discover, show, or set the Codex Cloud environment for this Pi session",
     handler: async (args, ctx) => {
-      const requested = args.trim();
-      if (!requested) {
-        ctx.ui.notify(
-          environmentId ? `Environment: ${environmentId}` : "Environment is not set.",
-          "info",
-        );
-        return;
-      }
-      if (requested.startsWith("-")) {
-        ctx.ui.notify("Environment ID must not start with '-'.", "error");
-        return;
-      }
-      environmentId = requested;
-      ctx.ui.notify(`Environment set for this session: ${environmentId}`, "info");
+      await runCommand(ctx, async () => {
+        const requested = args.trim();
+        if (!requested && environmentId) {
+          ctx.ui.notify(`Environment: ${environmentId}`, "info");
+          return;
+        }
+        const selected =
+          !requested || requested === "auto"
+            ? await discoverEnvironment(client, ctx)
+            : parseEnvironmentId(requested);
+        if (!selected) {
+          ctx.ui.notify("Environment selection cancelled.", "info");
+          return;
+        }
+        environmentId = selected;
+        ctx.ui.notify(`Environment set for this session: ${environmentId}`, "info");
+      });
     },
   });
 
@@ -179,7 +219,7 @@ export default function piCodexCloud(pi: ExtensionAPI): void {
           if (!ctx.hasUI) {
             throw new Error("Set PI_CXCLOUD_ENV_ID before using non-interactive mode.");
           }
-          environmentId = (await ctx.ui.input("Codex Cloud environment ID"))?.trim() || undefined;
+          environmentId = await discoverEnvironment(client, ctx);
         }
         if (!environmentId) throw new Error("Codex Cloud environment ID is required.");
         ctx.ui.setStatus("pi-cxcloud", "delegating");
