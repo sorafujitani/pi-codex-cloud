@@ -36,18 +36,6 @@
     "@earendil-works/pi-coding-agent": "*",
     "typebox": "*"
   },
-  "devEngines": {
-    "packageManager": {
-      "name": "pnpm",
-      "version": "11.22.0",
-      "onFail": "download"
-    },
-    "runtime": {
-      "name": "node",
-      "version": "26.7.0",
-      "onFail": "download"
-    }
-  },
   "engines": {
     "node": ">=22.19.0"
   },
