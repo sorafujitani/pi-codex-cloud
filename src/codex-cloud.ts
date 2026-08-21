@@ -11,11 +11,7 @@ export interface ExecResult {
   killed: boolean;
 }
 
-export type Exec = (
-  command: string,
-  args: string[],
-  options?: ExecOptions,
-) => Promise<ExecResult>;
+export type Exec = (command: string, args: string[], options?: ExecOptions) => Promise<ExecResult>;
 
 export interface GitState {
   branch: string;
@@ -149,11 +145,16 @@ export async function inspectGitState(
   const upstream = upstreamResult.stdout.trim();
 
   const divergence = outputOf(
-    await checkedExec(exec, "git", ["rev-list", "--left-right", "--count", `${upstream}...${branch}`], {
-      cwd,
-      signal,
-      timeout: DEFAULT_TIMEOUT_MS,
-    }),
+    await checkedExec(
+      exec,
+      "git",
+      ["rev-list", "--left-right", "--count", `${upstream}...${branch}`],
+      {
+        cwd,
+        signal,
+        timeout: DEFAULT_TIMEOUT_MS,
+      },
+    ),
   );
   const [behindText, aheadText] = divergence.split(/\s+/);
   const behind = Number(behindText);
@@ -162,11 +163,16 @@ export async function inspectGitState(
     throw new Error(`Could not parse Git divergence: ${divergence}`);
   }
 
-  const status = await checkedExec(exec, "git", ["status", "--porcelain", "--untracked-files=normal"], {
-    cwd,
-    signal,
-    timeout: DEFAULT_TIMEOUT_MS,
-  });
+  const status = await checkedExec(
+    exec,
+    "git",
+    ["status", "--porcelain", "--untracked-files=normal"],
+    {
+      cwd,
+      signal,
+      timeout: DEFAULT_TIMEOUT_MS,
+    },
+  );
 
   return {
     branch,
@@ -267,7 +273,8 @@ export class CodexCloudClient {
 
   async diff(options: InspectOptions): Promise<string> {
     const args = ["cloud", "diff", requireValue(options.taskId, "Task ID")];
-    if (options.attempt !== undefined) args.push("--attempt", String(parseAttempts(options.attempt)));
+    if (options.attempt !== undefined)
+      args.push("--attempt", String(parseAttempts(options.attempt)));
     return outputOf(
       await checkedExec(this.exec, this.codexBinary, args, {
         cwd: options.cwd,
@@ -279,7 +286,8 @@ export class CodexCloudClient {
 
   async apply(options: InspectOptions): Promise<string> {
     const args = ["cloud", "apply", requireValue(options.taskId, "Task ID")];
-    if (options.attempt !== undefined) args.push("--attempt", String(parseAttempts(options.attempt)));
+    if (options.attempt !== undefined)
+      args.push("--attempt", String(parseAttempts(options.attempt)));
     return outputOf(
       await checkedExec(this.exec, this.codexBinary, args, {
         cwd: options.cwd,

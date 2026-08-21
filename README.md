@@ -30,35 +30,37 @@ pi install /absolute/path/to/pi-codex-cloud
 Set the default Codex Cloud environment ID before starting Pi:
 
 ```bash
-export PI_CODEX_CLOUD_ENV_ID="your-environment-id"
+export PI_CXCLOUD_ENV_ID="your-environment-id"
 pi
 ```
 
 You can also set it for the current Pi session:
 
 ```text
-/cloud:env your-environment-id
+/cxcloud:env your-environment-id
 ```
 
-The optional `PI_CODEX_CLOUD_ATTEMPTS` variable sets the default best-of-N attempt count from 1 to 4. The default is 1.
+The optional `PI_CXCLOUD_ATTEMPTS` variable sets the default best-of-N attempt count from 1 to 4. The default is 1.
 
 ## Commands
 
 ```text
-/cloud:setup
-/cloud:env [environment-id]
-/cloud:delegate <task prompt>
-/cloud:list
-/cloud:status <task-id>
-/cloud:diff <task-id> [attempt]
-/cloud:apply <task-id> [attempt]
+/cxcloud:setup
+/cxcloud:env [environment-id]
+/cxcloud:delegate <task prompt>
+/cxcloud:list
+/cxcloud:status <task-id>
+/cxcloud:diff <task-id> [attempt]
+/cxcloud:apply <task-id> [attempt]
 ```
 
-`/cloud:apply` always asks for confirmation before changing the local working tree.
+`/cxcloud:apply` always asks for confirmation before changing the local working tree.
 
 ## Agent tool
 
-The extension registers a `codex_cloud` tool so Pi can delegate a task and inspect `list`, `status`, or `diff` results itself. Applying a diff is intentionally only available as the user-invoked `/cloud:apply` command.
+The extension registers a `cxcloud` tool so Pi can delegate a task and inspect `list`, `status`, or `diff` results itself. Applying a diff is intentionally only available as the user-invoked `/cxcloud:apply` command.
+
+The package also includes a `cxcloud` Agent Skill. Pi loads it on demand when a request is suitable for Codex Cloud delegation, or you can invoke it explicitly with `/skill:cxcloud`.
 
 Example request to Pi:
 
@@ -82,9 +84,9 @@ Commands are executed with an argument array through Pi's extension API. User in
 ## Development
 
 ```bash
-npm install
-npm test
-npm run typecheck
+vp install
+vp check
+vp test --run
 ```
 
 ## License

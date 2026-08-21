@@ -58,7 +58,11 @@ describe("CodexCloudClient", () => {
     const exec: Exec = async (command, args) => {
       calls.push({ command, args });
       if (command === "git" && args[0] === "branch") return ok("feature/test\n");
-      if (command === "git" && args[0] === "rev-parse" && args.some((arg) => arg.endsWith("@{upstream}"))) {
+      if (
+        command === "git" &&
+        args[0] === "rev-parse" &&
+        args.some((arg) => arg.endsWith("@{upstream}"))
+      ) {
         return ok("origin/feature/test\n");
       }
       if (command === "git" && args[0] === "rev-list") return ok("0\t0\n");
@@ -95,7 +99,11 @@ describe("CodexCloudClient", () => {
     const exec: Exec = async (command, args) => {
       calls.push({ command, args });
       if (command === "git" && args[0] === "branch") return ok("feature/test\n");
-      if (command === "git" && args[0] === "rev-parse" && args.some((arg) => arg.endsWith("@{upstream}"))) {
+      if (
+        command === "git" &&
+        args[0] === "rev-parse" &&
+        args.some((arg) => arg.endsWith("@{upstream}"))
+      ) {
         return { stdout: "", stderr: "no upstream", code: 128, killed: false };
       }
       return ok();
