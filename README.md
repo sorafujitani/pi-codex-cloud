@@ -42,6 +42,16 @@ You can also set it for the current Pi session:
 
 The optional `PI_CXCLOUD_ATTEMPTS` variable sets the default best-of-N attempt count from 1 to 4. The default is 1.
 
+### Codex Cloud environment for this repository
+
+When using Codex Cloud to develop `pi-codex-cloud` itself, configure the environment with Node.js 26.7.0. Codex Cloud recognizes pnpm projects automatically; if you use a custom setup script, install dependencies with:
+
+```bash
+pnpm install --frozen-lockfile
+```
+
+Node.js 26.7.0 is the current release, not an LTS release. The project intentionally follows the latest stable Node.js release.
+
 ## Commands
 
 ```text
@@ -83,11 +93,15 @@ Commands are executed with an argument array through Pi's extension API. User in
 
 ## Development
 
+Development uses Node.js 26.7.0 and pnpm 11.22.0.
+
 ```bash
-vp install
-vp check
-vp test --run
+pnpm install --frozen-lockfile
+pnpm check
+pnpm test
 ```
+
+The project pins the current Node.js and pnpm releases in `package.json` and `.node-version`. `pnpm check` runs Vite+ formatting, Oxlint, and type checking; `pnpm test` runs Vitest.
 
 ## License
 
